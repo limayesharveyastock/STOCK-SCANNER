@@ -4,12 +4,8 @@ import numpy as np
 import yfinance as yf
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-st.set_page_config(layout="wide", page_title="NIFTY500 Robust Scanner")
-
-# --- Indicators ---
-def ema(series, span):
-    return series.ewm(span=span, adjust=False).mean()
-
+# --- Indicator Helpers ---
+def ema(series, span): return series.ewm(span=span, adjust=False).mean()
 def rsi(series, length=14):
     delta = series.diff()
     up = delta.clip(lower=0)
@@ -26,7 +22,6 @@ def supertrend(df, length=12, multiplier=2.5):
     atr = tr.rolling(length).mean()
     upperband = hl2 + (multiplier * atr)
     lowerband = hl2 - (multiplier * atr)
-    
     trend = np.zeros(len(df))
     st = np.zeros(len(df))
     for i in range(1, len(df)):
@@ -39,40 +34,44 @@ def supertrend(df, length=12, multiplier=2.5):
         st[i] = lowerband.iloc[i] if trend[i] == 1 else upperband.iloc[i]
     return pd.Series(st, index=df.index)
 
-# --- Robust Processor ---
+# --- Processor ---
 def process_ticker(t):
     try:
         df = yf.download(t, period="10d", interval="15m", progress=False)
         if df.empty or len(df) < 60: return None
-        
-        # FIX: Flatten MultiIndex if present
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
             
         df['EMA9'] = ema(df['Close'], 9)
         df['EMA26'] = ema(df['Close'], 26)
         df['RSI'] = rsi(df['Close'], 14)
         df['ST'] = supertrend(df)
         
-        # Use .iloc[-1] and extract value to ensure scalar float
         last = df.iloc[-1]
         val = {k: float(v.iloc[0] if hasattr(v, 'iloc') else v) for k, v in last.items()}
         
-        # Logic
-        if (val['EMA9'] > val['EMA26']) and (val['Close'] > val['ST']) and (val['RSI'] > 50):
-            return {'Ticker': t.replace('.NS', ''), 'Close': val['Close'], 'RSI': round(val['RSI'], 2)}
+        # RELAXED LOGIC: Returns data if ANY condition is met for visibility
+        if (val['EMA9'] > val['EMA26']) or (val['Close'] > val['ST']) or (val['RSI'] > 55):
+            return {
+                'Ticker': t.replace('.NS', ''), 
+                'Close': val['Close'], 
+                'RSI': round(val['RSI'], 2),
+                'EMA_Cross': val['EMA9'] > val['EMA26'],
+                'Above_ST': val['Close'] > val['ST']
+            }
     except: return None
     return None
 
 # --- UI ---
-st.title("⚡ NIFTY500 Robust Scanner")
+st.title("⚡ NIFTY500 Momentum Explorer")
 if st.button("Run Scan"):
-    tickers = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "SBIN.NS"] # Replace with list loading
+    tickers = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "SBIN.NS"] 
     results = []
     with ThreadPoolExecutor(max_workers=6) as ex:
         futures = [ex.submit(process_ticker, t) for t in tickers]
         for f in as_completed(futures):
             if f.result(): results.append(f.result())
     
-    if results: st.table(pd.DataFrame(results))
-    else: st.info("Scan complete: No matches found.")
+    if results:
+        st.table(pd.DataFrame(results))
+    else:
+        st.error("No data retrieved. Check ticker list or internet connectivity.")
