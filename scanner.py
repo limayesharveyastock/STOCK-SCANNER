@@ -66,10 +66,12 @@ if st.sidebar.button("Scan"):
                 
                 hit = False
                 if side == "Bullish":
-                    if (use_ema9 and ema9 < p) or (use_ema26 and ema26 < ema9) or (use_rsi and rsi > 60):
+                    # Using OR logic with sensitivity threshold 50
+                    if (use_ema9 and ema9 < p) or (use_ema26 and ema26 < ema9) or (use_rsi and rsi > 50):
                         hit = True
                 else:
-                    if (use_ema9 and ema9 > p) or (use_ema26 and ema26 > ema9) or (use_rsi and rsi < 30):
+                    # Using OR logic with sensitivity threshold 50
+                    if (use_ema9 and ema9 > p) or (use_ema26 and ema26 > ema9) or (use_rsi and rsi < 50):
                         hit = True
                 
                 if hit:
@@ -81,4 +83,4 @@ if st.sidebar.button("Scan"):
     if results:
         st.table(pd.DataFrame(results))
     else:
-        st.write("No matches found. Try adjusting indicator settings.")
+        st.write("No matches found. The current market conditions may not be triggering your specific logic.")
