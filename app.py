@@ -82,9 +82,23 @@ if st.session_state.master_df is not None and not st.session_state.master_df.emp
             
     st.write(f"### Results ({len(filtered_df)} stocks found)")
     st.table(filtered_df.sort_values(by='RSI', ascending=False))
-import streamlit as st
-from kiteconnect import KiteConnect
+import requests
+import pandas as pd
 
-api_key = st.secrets["api_key"]
-api_secret = st.secrets["api_secret"]
-kite = KiteConnect(api_key=api_key)
+# Zerodha's instrument list URL
+url = "https://api.kite.trade/instruments"
+
+def get_instrument_token(symbol):
+    # This downloads the full list (it's large)
+    response = requests.get(url)
+    df = pd.read_csv(io.StringIO(response.text))
+    
+    # Filter for NSE stocks and your specific symbol
+    stock = df[(df['tradingsymbol'] == symbol) & (df['exchange'] == 'NSE')]
+    
+    if not stock.empty:
+        return stock.iloc[0]['instrument_token']
+    return None
+
+# Example: Get token for RELIANCE
+# print(get_instrument_token("RELIANCE"))
