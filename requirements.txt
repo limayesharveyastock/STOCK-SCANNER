@@ -1,5 +1,5 @@
-streamlit==1.30.0
-yfinance==0.2.35
-pandas==2.1.0
-pandas_ta==0.3.14b
-numpy==1.26.0
+streamlit
+yfinance
+pandas
+numpy
+git+https://github.com/twopirllc/pandas-ta.git@development
