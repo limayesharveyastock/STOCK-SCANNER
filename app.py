@@ -1,24 +1,22 @@
 import streamlit as st
 import pandas as pd
-from kiteconnect import KiteConnect
-import io
 import requests
+import io
+from kiteconnect import KiteConnect
+from datetime import datetime, timedelta
 
-# --- 1. Setup Kite ---
-# Use st.secrets to keep your keys safe!
+# Initialize Kite
 kite = KiteConnect(api_key=st.secrets["api_key"])
 kite.set_access_token(st.secrets["access_token"])
 
 @st.cache_data(ttl=86400)
 def get_instrument_map():
-    """Downloads the master list and creates a {symbol: token} map."""
+    """Maps symbols to Kite instrument tokens."""
     url = "https://api.kite.trade/instruments"
     headers = {"Authorization": f"token {st.secrets['api_key']}:{st.secrets['access_token']}"}
     response = requests.get(url, headers=headers)
     df = pd.read_csv(io.StringIO(response.text))
-    # Filter for NSE and map symbol to token
-    nse_df = df[df['exchange'] == 'NSE']
-    return dict(zip(nse_df['tradingsymbol'], nse_df['instrument_token']))
+    return dict(zip(df['tradingsymbol'], df['instrument_token']))
 
 def calculate_metrics(df):
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
@@ -26,31 +24,25 @@ def calculate_metrics(df):
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'] = 100 - (100 / (1 + (gain / loss)))
     return df
 
-# --- 2. Scanning Engine ---
-if st.button("Run NIFTY 200 Scan via Kite"):
+# Main Logic
+if st.button("Scan NIFTY 200"):
     instr_map = get_instrument_map()
-    # Replace this with your actual NIFTY 200 symbol list
-    nifty200_symbols = ["RELIANCE", "TCS", "INFY"] # Add all 200 here
-    
+    # List your NIFTY 200 symbols here
+    symbols = ["RELIANCE", "TCS", "INFY"] # Add full list
     results = []
-    for symbol in nifty200_symbols:
-        token = instr_map.get(symbol)
+    
+    for sym in symbols:
+        token = instr_map.get(sym)
         if token:
-            # Fetch last 30 days of daily data
-            data = kite.historical_data(token, from_date="2026-05-07", to_date="2026-06-07", interval="day")
-            df = pd.DataFrame(data)
-            df = calculate_metrics(df)
+            # Fetch last 30 days
+            from_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+            to_date = datetime.now().strftime('%Y-%m-%d')
+            data = kite.historical_data(token, from_date=from_date, to_date=to_date, interval="day")
+            df = calculate_metrics(pd.DataFrame(data))
             last = df.iloc[-1]
-            results.append({
-                "Ticker": symbol,
-                "Price": round(float(last['Close']), 2),
-                "EMA9": round(float(last['EMA9']), 2),
-                "EMA26": round(float(last['EMA26']), 2),
-                "RSI": round(float(last['RSI']), 2)
-            })
-    st.session_state.master_df = pd.DataFrame(results)
-    st.rerun()
+            results.append({"Ticker": sym, "RSI": round(last['RSI'], 2), "EMA9": round(last['EMA9'], 2)})
+            
+    st.table(pd.DataFrame(results))
