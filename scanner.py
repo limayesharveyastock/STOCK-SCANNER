@@ -17,7 +17,6 @@ use_rsi = st.sidebar.checkbox("RSI", value=True)
 
 # Indicator functions
 def get_indicators(df):
-    # Ensure data is numeric
     df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
@@ -67,9 +66,19 @@ if st.sidebar.button("Scan"):
                 
                 hit = False
                 if side == "Bullish":
-                    # Using OR logic for broader results
                     if (use_ema9 and ema9 < p) or (use_ema26 and ema26 < ema9) or (use_rsi and rsi > 60):
                         hit = True
                 else:
-                    # Using OR logic for broader results
-                    if (use_ema9 and ema9 > p) or (use
+                    if (use_ema9 and ema9 > p) or (use_ema26 and ema26 > ema9) or (use_rsi and rsi < 30):
+                        hit = True
+                
+                if hit:
+                    results.append({"Ticker": symbol, "Price": f"₹{p:.2f}", "RSI": f"{rsi:.1f}"})
+        except Exception:
+            continue
+        progress_bar.progress((i + 1) / len(tickers))
+            
+    if results:
+        st.table(pd.DataFrame(results))
+    else:
+        st.write("No matches found. Try adjusting indicator settings.")
