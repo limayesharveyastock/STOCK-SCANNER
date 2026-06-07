@@ -4,13 +4,13 @@ import pandas as pd
 import requests
 import io
 
-st.set_page_config(layout="wide", page_title="NIFTY 200 Filterable Screener")
-st.title("⚡ NIFTY 200 Filterable Screener")
+st.set_page_config(layout="wide", page_title="NIFTY 500 Pro Screener")
+st.title("⚡ NIFTY 500 Pro Momentum Screener")
 
-# --- Data Collection Logic ---
+# --- 1. Helper Functions ---
 @st.cache_data(ttl=86400)
-def get_nifty_200_tickers():
-    url = "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv"
+def get_nifty_500_tickers():
+    url = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
@@ -19,10 +19,10 @@ def get_nifty_200_tickers():
     except: return []
 
 def calculate_metrics(df):
-    # EMA Calculation
+    # Calculate EMA
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
-    # RSI Calculation (14 period)
+    # Calculate RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -30,15 +30,16 @@ def calculate_metrics(df):
     df['RSI'] = 100 - (100 / (1 + rs))
     return df
 
-# --- UI & State Management ---
+# --- 2. Scanning Execution ---
 if 'master_df' not in st.session_state:
     st.session_state.master_df = None
 
-if st.button("Run Full NIFTY 200 Scan"):
-    with st.spinner("Processing NIFTY 200..."):
-        tickers = get_nifty_200_tickers()
+if st.button("Run Full NIFTY 500 Scan"):
+    with st.spinner("Processing market data..."):
+        tickers = get_nifty_500_tickers()
         results = []
         bar = st.progress(0)
+        
         for i, t in enumerate(tickers):
             try:
                 df = yf.download(t, period="1mo", interval="1d", progress=False)
@@ -46,32 +47,36 @@ if st.button("Run Full NIFTY 200 Scan"):
                     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                     df = calculate_metrics(df)
                     last = df.iloc[-1]
-                    results.append({
-                        "Ticker": t.replace(".NS", ""),
-                        "Price": round(float(last['Close']), 2),
-                        "EMA9": round(float(last['EMA9']), 2),
-                        "EMA26": round(float(last['EMA26']), 2),
-                        "RSI": round(float(last['RSI']), 2)
-                    })
+                    
+                    # Only add if calculations are valid
+                    if pd.notnull(last['RSI']):
+                        results.append({
+                            "Ticker": t.replace(".NS", ""),
+                            "Price": round(float(last['Close']), 2),
+                            "EMA9": round(float(last['EMA9']), 2),
+                            "EMA26": round(float(last['EMA26']), 2),
+                            "RSI": round(float(last['RSI']), 2)
+                        })
             except: continue
             bar.progress((i + 1) / len(tickers))
+            
         st.session_state.master_df = pd.DataFrame(results)
-        st.rerun()
+    st.rerun()
 
-# --- Filtering Section ---
-if st.session_state.master_df is not None:
-    st.sidebar.header("Filter Criteria")
+# --- 3. Filtering Section ---
+if st.session_state.master_df is not None and not st.session_state.master_df.empty:
     df = st.session_state.master_df
     
-    # Range Slider for RSI
+    st.sidebar.header("Filter Criteria")
     min_rsi, max_rsi = st.sidebar.slider("RSI Range", 0.0, 100.0, (30.0, 70.0))
-    # Toggle for EMA Crossover
-    bullish_only = st.sidebar.checkbox("EMA 9 > EMA 26 (Bullish Trend)", True)
+    bullish_only = st.sidebar.checkbox("Bullish EMA Cross (EMA9 > EMA26)", True)
     
-    # Applying Filters
+    # Filter and Display
     filtered_df = df[(df['RSI'] >= min_rsi) & (df['RSI'] <= max_rsi)]
     if bullish_only:
         filtered_df = filtered_df[filtered_df['EMA9'] > filtered_df['EMA26']]
-        
-    st.write(f"### Results ({len(filtered_df)} stocks)")
+            
+    st.write(f"### Showing {len(filtered_df)} Matches")
     st.table(filtered_df.sort_values(by='RSI', ascending=False))
+else:
+    st.info("Click 'Run Full NIFTY 500 Scan' to initialize the data.")
