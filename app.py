@@ -4,13 +4,13 @@ import pandas as pd
 import requests
 import io
 
-st.set_page_config(layout="wide", page_title="NIFTY 500 Filterable Screener")
-st.title("⚡ NIFTY 500 Filterable Screener")
+st.set_page_config(layout="wide", page_title="NIFTY 200 Filterable Screener")
+st.title("⚡ NIFTY 200 Filterable Screener")
 
 # --- Data Collection Logic ---
 @st.cache_data(ttl=86400)
-def get_nifty_500_tickers():
-    url = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
+def get_nifty_200_tickers():
+    url = "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv"
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
@@ -34,9 +34,9 @@ def calculate_metrics(df):
 if 'master_df' not in st.session_state:
     st.session_state.master_df = None
 
-if st.button("Run Full NIFTY 500 Scan"):
-    with st.spinner("Processing NIFTY 500..."):
-        tickers = get_nifty_500_tickers()
+if st.button("Run Full NIFTY 200 Scan"):
+    with st.spinner("Processing NIFTY 200..."):
+        tickers = get_nifty_200_tickers()
         results = []
         bar = st.progress(0)
         for i, t in enumerate(tickers):
