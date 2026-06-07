@@ -82,3 +82,9 @@ if st.session_state.master_df is not None and not st.session_state.master_df.emp
             
     st.write(f"### Results ({len(filtered_df)} stocks found)")
     st.table(filtered_df.sort_values(by='RSI', ascending=False))
+import streamlit as st
+from kiteconnect import KiteConnect
+
+api_key = st.secrets["api_key"]
+api_secret = st.secrets["api_secret"]
+kite = KiteConnect(api_key=api_key)
