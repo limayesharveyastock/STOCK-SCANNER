@@ -57,17 +57,22 @@ def process_ticker(t):
     try:
         df = yf.download(t, period="10d", interval="15m", progress=False)
         if len(df) < 60: return None
+        
+        # Calculate indicators...
         df['EMA9'] = ema(df['Close'], 9)
         df['EMA26'] = ema(df['Close'], 26)
         df['RSI'] = rsi(df['Close'], 14)
         df['ST'] = supertrend(df)
-        
         last = df.iloc[-1]
-        # Confluence logic (Trend + Momentum)
-        if (last['EMA9'] > last['EMA26']) and (last['Close'] > last['ST']) and (last['RSI'] > 50):
-            return {'Ticker': t, 'Close': last['Close'], 'RSI': last['RSI']}
+        
+        # Return status object instead of None
+        return {
+            'Ticker': t.replace('.NS', ''),
+            'EMA_Cross': last['EMA9'] > last['EMA26'],
+            'Above_ST': last['Close'] > last['ST'],
+            'RSI_Value': round(last['RSI'], 2)
+        }
     except: return None
-    return None
 
 # --- App UI ---
 st.title("⚡ NIFTY 500 Momentum Scanner")
