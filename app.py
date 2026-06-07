@@ -1,30 +1,28 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import requests
+from kiteconnect import KiteConnect
 import io
+import requests
 
-st.set_page_config(layout="wide", page_title="NIFTY 200 Momentum Screener")
-st.title("⚡ NIFTY 200 Momentum Screener")
+# --- 1. Setup Kite ---
+# Use st.secrets to keep your keys safe!
+kite = KiteConnect(api_key=st.secrets["api_key"])
+kite.set_access_token(st.secrets["access_token"])
 
-# --- 1. Fetch NIFTY 200 Tickers ---
 @st.cache_data(ttl=86400)
-def get_nifty_200_tickers():
-    url = "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv"
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
-        df = pd.read_csv(io.StringIO(response.text))
-        return (df['Symbol'].astype(str) + ".NS").tolist()
-    except:
-        st.error("Failed to fetch NIFTY 200 list.")
-        return []
+def get_instrument_map():
+    """Downloads the master list and creates a {symbol: token} map."""
+    url = "https://api.kite.trade/instruments"
+    headers = {"Authorization": f"token {st.secrets['api_key']}:{st.secrets['access_token']}"}
+    response = requests.get(url, headers=headers)
+    df = pd.read_csv(io.StringIO(response.text))
+    # Filter for NSE and map symbol to token
+    nse_df = df[df['exchange'] == 'NSE']
+    return dict(zip(nse_df['tradingsymbol'], nse_df['instrument_token']))
 
-# --- 2. Indicator Calculation ---
 def calculate_metrics(df):
     df['EMA9'] = df['Close'].ewm(span=9, adjust=False).mean()
     df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
-    
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
@@ -32,73 +30,27 @@ def calculate_metrics(df):
     df['RSI'] = 100 - (100 / (1 + rs))
     return df
 
-# --- 3. Scanning Engine ---
-if 'master_df' not in st.session_state:
-    st.session_state.master_df = None
-
-if st.button("Run NIFTY 200 Scan"):
-    with st.spinner("Analyzing NIFTY 200..."):
-        tickers = get_nifty_200_tickers()
-        results = []
-        bar = st.progress(0)
-        
-        for i, t in enumerate(tickers):
-            try:
-                df = yf.download(t, period="2mo", interval="1d", progress=False)
-                if not df.empty and len(df) > 30:
-                    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-                    df = calculate_metrics(df)
-                    last = df.iloc[-1]
-                    
-                    if pd.notnull(last['RSI']):
-                        results.append({
-                            "Ticker": t.replace(".NS", ""),
-                            "Price": round(float(last['Close']), 2),
-                            "EMA9": round(float(last['EMA9']), 2),
-                            "EMA26": round(float(last['EMA26']), 2),
-                            "RSI": round(float(last['RSI']), 2)
-                        })
-            except: continue
-            bar.progress((i + 1) / len(tickers))
-        st.session_state.master_df = pd.DataFrame(results)
+# --- 2. Scanning Engine ---
+if st.button("Run NIFTY 200 Scan via Kite"):
+    instr_map = get_instrument_map()
+    # Replace this with your actual NIFTY 200 symbol list
+    nifty200_symbols = ["RELIANCE", "TCS", "INFY"] # Add all 200 here
+    
+    results = []
+    for symbol in nifty200_symbols:
+        token = instr_map.get(symbol)
+        if token:
+            # Fetch last 30 days of daily data
+            data = kite.historical_data(token, from_date="2026-05-07", to_date="2026-06-07", interval="day")
+            df = pd.DataFrame(data)
+            df = calculate_metrics(df)
+            last = df.iloc[-1]
+            results.append({
+                "Ticker": symbol,
+                "Price": round(float(last['Close']), 2),
+                "EMA9": round(float(last['EMA9']), 2),
+                "EMA26": round(float(last['EMA26']), 2),
+                "RSI": round(float(last['RSI']), 2)
+            })
+    st.session_state.master_df = pd.DataFrame(results)
     st.rerun()
-
-# --- 4. Filtering Interface ---
-if st.session_state.master_df is not None and not st.session_state.master_df.empty:
-    df = st.session_state.master_df
-    
-    st.sidebar.header("Filter Criteria")
-    min_rsi, max_rsi = st.sidebar.slider("RSI Range", 0.0, 100.0, (0.0, 100.0))
-    
-    # Toggle logic for Trend
-    trend_type = st.sidebar.radio("Select Trend Type", ["All", "Bullish (EMA9 > EMA26)", "Bearish (EMA9 < EMA26)"])
-    
-    filtered_df = df[(df['RSI'] >= min_rsi) & (df['RSI'] <= max_rsi)]
-    
-    if trend_type == "Bullish (EMA9 > EMA26)":
-        filtered_df = filtered_df[filtered_df['EMA9'] > filtered_df['EMA26']]
-    elif trend_type == "Bearish (EMA9 < EMA26)":
-        filtered_df = filtered_df[filtered_df['EMA9'] < filtered_df['EMA26']]
-            
-    st.write(f"### Results ({len(filtered_df)} stocks found)")
-    st.table(filtered_df.sort_values(by='RSI', ascending=False))
-import requests
-import pandas as pd
-
-# Zerodha's instrument list URL
-url = "https://api.kite.trade/instruments"
-
-def get_instrument_token(symbol):
-    # This downloads the full list (it's large)
-    response = requests.get(url)
-    df = pd.read_csv(io.StringIO(response.text))
-    
-    # Filter for NSE stocks and your specific symbol
-    stock = df[(df['tradingsymbol'] == symbol) & (df['exchange'] == 'NSE')]
-    
-    if not stock.empty:
-        return stock.iloc[0]['instrument_token']
-    return None
-
-# Example: Get token for RELIANCE
-# print(get_instrument_token("RELIANCE"))
